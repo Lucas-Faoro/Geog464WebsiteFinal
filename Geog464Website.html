@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Montreal Green Spaces & Tree Map</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+  
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css"/>
+
+  <style>
+    /* ------------------------------------------------ */
+    /* BASE STYLES                                    */
+    /* ------------------------------------------------ */
+    body { 
+      font-family: Arial, sans-serif; 
+      margin:0; 
+      background:#f5f0e1; 
+      color:#333; 
+      display:flex; 
+      flex-direction:column; 
+      min-height:100vh; 
+    }
+    .container { width:90%; max-width:1200px; margin:0 auto; padding:20px; }
+    header { background:#6a4e3d; color:#fff; padding:18px 0; margin-bottom:8px; }
+    header .logo { font-size:1.6rem; text-decoration:none; color:#fff; }
+    /* UPDATED NAV */
+    nav ul { list-style:none; display:flex; gap:12px; padding:0; margin:12px 0 0 0; justify-content:center; flex-wrap: wrap; }
+    nav a { color:#fff; text-decoration:none; padding:6px 10px; border-radius:6px; transition: background 0.2s; }
+    nav a:hover { background: rgba(255, 255, 255, 0.15); }
+    nav a.active { font-weight:700; background:rgba(255,255,255,0.08); text-decoration:underline; }
+    /* END UPDATED NAV */
+    main { flex:1; padding-bottom:40px; }
+    .tab-content { display:none; }
+    .tab-content.active { display:block; }
+    .hero { background:#fff5e1; padding:20px; border-radius:10px; text-align:center; margin-bottom:16px; }
+    .map-container { 
+      position: relative;
+      height:75vh; 
+      width:100%; 
+      border-radius:10px; 
+      box-shadow:0 0 10px rgba(0,0,0,0.08); 
+    }
+    footer { background:#6a4e3d; color:#fff; text-align:center; padding:14px 0; margin-top:20px; }
+    .leaflet-control-layers {
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 6px;
+      padding: 4px;
+    }
+    .loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.85); 
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000; 
+      font-size: 1.2rem;
+      color: #6a4e3d;
+      font-weight: bold;
+      border-radius: 10px; 
+      text-align: center;
+      padding: 20px;
+    }
+    
+    /* NEW: Geocoder Control styling to sit above the map */
+    .leaflet-control-geocoder {
+        margin-bottom: 8px;
+        z-index: 800; /* Must be lower than loading overlay (1000) but higher than map (1) */
+    }
+    .geocoder-control-container {
+        display: flex;
+        justify-content: center;
+        width: 100%;
+        margin-bottom: 15px;
+    }
+    .leaflet-control-geocoder.leaflet-bar {
+        /* Makes the search bar wider than default on larger screens */
+        min-width: 300px; 
+        max-width: 90%;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-radius: 8px;
+    }
+    
+    /* NEW CONTENT STYLES */
+    .content-box {
+        background: #fff;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        margin-top: 10px;
+    }
+    .content-box h4 {
+        color: #047857;
+        border-bottom: 2px solid #e5e7eb;
+        padding-bottom: 8px;
+        margin-top: 20px;
+    }
+    .content-box ul {
+        list-style-type: disc;
+        margin-left: 20px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <a class="logo" href="#">Montreal Green Spaces & Tree Map</a>
+      <nav aria-label="primary">
+        <ul>
+          <li><a href="#" onclick="switchView('home'); return false;" id="nav-home" class="active">Home</a></li>
+          <li><a href="#" onclick="switchView('greenspace'); return false;" id="nav-greenspace">Map View</a></li>
+          <li><a href="#" onclick="switchView('information'); return false;" id="nav-information">Information</a></li>
+          <li><a href="#" onclick="switchView('glossary'); return false;" id="nav-glossary">Glossary/Sources</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" id="main">
+    
+    <section id="home" class="tab-content active">
+      <div class="hero">
+        <h2>Montreal Green Spaces & Trees</h2>
+        <p>Welcome! This application allows you to explore the green infrastructure and climate vulnerability of Montreal using open data from the City.</p>
+        <p>Click on the **Map View** tab to begin exploring trees, parks, flood zones, and urban heat areas.</p>
+      </div>
+    </section>
+
+    <section id="greenspace" class="tab-content">
+      <h3 style="text-align:center">Green Spaces & Tree Map</h3>
+      
+      <div class="geocoder-control-container">
+        </div>
+      <div id="greenspace-map" class="map-container"></div>
+    </section>
+    
+    <section id="information" class="tab-content">
+        <h3 style="text-align:center">Project Information & Analysis</h3>
+        <div class="content-box">
+            <p>Use this section to provide details about the data, the project motivation, and any high-level analysis or insights you want to share with the user.</p>
+
+            <h4>Why Green Spaces Matter</h4>
+            <p>Urban green spaces and trees are crucial for public health, biodiversity, and climate resilience. They:</p>
+            <ul>
+                <li>Reduce the **Urban Heat Island** effect, making neighborhoods cooler.</li>
+                <li>Manage stormwater runoff and mitigate minor **Flood Risk**.</li>
+                <li>Improve air quality and provide habitats for urban wildlife.</li>
+            </ul>
+
+            <h4>Map Overlays Explained</h4>
+            <p>The layers in the Map View are derived from various datasets:</p>
+            <ul>
+                <li>**All Trees (Markers):** Individual street trees collected by the City of Montreal (Loaded by default).</li>
+                <li>**Green Spaces Boundary:** Boundaries of parks and green areas (Loaded by default).</li>
+                <li>**Heatmap Zones:** Areas categorized by potential heat exposure, often reflecting pavement and building density (Class 3 is generally the hottest).</li>
+                <li>**Flood Zones:** Areas identified as being at higher risk of flooding.</li>
+                <li>**Green Priority Zones:** Strategic areas identified by the city for future greening and ecological development.</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="glossary" class="tab-content">
+        <h3 style="text-align:center">Glossary & Data Sources</h3>
+        <div class="content-box">
+            <p>This is where you can clearly list the source of your data and define key terms used in the map.</p>
+
+            <h4>Data Sources</h4>
+            <ul>
+                <li>**Tree Inventory:** Source link here.</li>
+                <li>**Green Spaces Boundary:** Source link here.</li>
+                <li>**Flood Zones:** Source link here.</li>
+                <li>**Urban Heat/Heatmap Zones:** Source link here.</li>
+                <li>**Green Priority Zones:** Source link here.</li>
+            </ul>
+            <p style="margin-top: 15px; font-size: 0.9em; color: #555;">*Note: Please replace the "Source link here" text above with actual hyperlinks to the open data portals you used.*</p>
+
+            <h4>Glossary of Terms</h4>
+            <ul>
+                <li>**GeoJSON:** A standard format for encoding various geographic data structures using JSON.</li>
+                <li>**Urban Heat Island (UHI):** The phenomenon where urban areas are significantly warmer than surrounding rural areas due to human activities and materials (like asphalt).</li>
+                <li>**FeatureCollection:** The top-level GeoJSON object that contains an array of individual `Feature` objects (like parks or heat zones).</li>
+            </ul>
+        </div>
+    </section>
+    
+  </main>
+
+  <footer>
+    <div class="container">© 2025 Montreal Green Spaces</div>
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  
+  <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+
+  <script>
+  // ----------------------------------------------------
+  // I. CONFIGURATION & GLOBAL STATE
+  // ----------------------------------------------------
+  
+  // Data will be stored here after initial load
+  let allTreeData = [];
+  let mapInstance = null;
+  let treeClusterLayer = null;
+
+  // Define all individual borough CSV files for tree data (13 total)
+  // UPDATED TO USE ASCII-SAFE, UNDERSCORE SEPARATED FILE NAMES
+  const BOROUGH_CSVS = {
+    // Key is for display/internal use (can keep accents). Value is the safe filename path.
+    'Ahuntsic - Cartierville': './data/Ahuntsic_Cartierville.csv',
+    'Côte-des-Neiges - Notre-Dame-de-Grâce': './data/CDN_NDG.csv',
+    'Rivière-des-Prairies - Pointe-aux-Trembles': './data/RDP_PAT.csv',
+    'Rosemont - La Petite-Patrie': './data/Rosemont_Patrie.csv',
+    'Saint-Léonard': './data/Saint_Leonard.csv',
+    'Verdun': './data/Verdun.csv',
+    'Ville-Marie': './data/Ville_Marie.csv',
+    'Lachine': './data/Lachine.csv',
+    'Le Plateau-Mont-Royal': './data/Le_Plateau_MR.csv',
+    'Le Sud-Ouest': './data/Le_Sud_Ouest.csv',
+    'Mercier - Hochelaga-Maisonneuve': './data/Mercier_HM.csv',
+    'Pierrefonds - Roxboro': './data/Pierrefonds_Roxboro.csv',
+    'Villeray-Saint-Michel - Parc-Extension': './data/Villeray_SM_PE.csv',
+  };
+
+
+  const TAB_CONFIG = {
+    greenspace: { 
+      mapDiv: 'greenspace-map', 
+      color: '#047857', // Tree marker color
+      tree_csv_files: BOROUGH_CSVS,
+      // GeoJSON Overlays - Paths match uploaded file names
+      greenspace_geojson: './data/Green.geojson',
+      flood_geojson: './data/Flood.geojson',
+      heat_geojson: './data/Heat.geojson', 
+      greenprio_geojson: './data/GreenPrio.geojson' 
+    },
+  };
+
+  // Only the optional layers will be explicitly managed in the layer control
+  const overlayLayers = {
+      "Flood Zones": L.layerGroup(), 
+      "Heatmap Zones": L.layerGroup(), 
+      "Green Priority Zones": L.layerGroup()
+  };
+
+  const mapInstances = {};
+  
+  // ----------------------------------------------------
+  // II. HELPER FUNCTIONS
+  // ----------------------------------------------------
+
+  function clearContainer(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = '';
+  }
+
+  function makeDivIcon(color, size=8) {
+    return L.divIcon({
+      className: 'circle-icon',
+      html: '<span style="display:block;width:'+size+'px;height:'+size+'px;'+
+            'border-radius:50%;background:'+color+';'+
+            'border:1px solid rgba(0,0,0,0.12);box-shadow:0 0 2px rgba(0,0,0,0.2)"></span>',
+      iconSize:[size,size],
+      iconAnchor:[Math.round(size/2),Math.round(size/2)]
+    });
+  }
+
+  function updateLoadingStatus(mapDivEl, boroughName) {
+    let loader = mapDivEl.querySelector('.loading-overlay');
+    if (!loader) {
+      loader = document.createElement('div');
+      loader.className = 'loading-overlay';
+      mapDivEl.appendChild(loader);
+    }
+    loader.innerHTML = 'Loading Tree Data...<br>Processing: **' + boroughName + '**';
+  }
+
+  /**
+   * Loads a single CSV file, parses it, and adds the raw data to the global allTreeData array.
+   */
+  function loadBoroughCsv(boroughName, csvPath) {
+    return new Promise((resolve, reject) => {
+      Papa.parse(csvPath, {
+        download: true, 
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        complete(results) {
+          results.data.forEach(row => {
+            // Check for common variations of Lat/Lon fields (using both English and French headers)
+            const lat = row.Latitude ?? row.latitude ?? row.LAT ?? row.lat ?? row.Coord_Y ?? row.Y ?? null;
+            const lon = row.Longitude ?? row.longitude ?? row.LON ?? row.lon ?? row.Coord_X ?? row.X ?? null;
+
+            if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) return; 
+            
+            // Store the data and location for filtering
+            allTreeData.push({
+                lat,
+                lon,
+                borough: boroughName,
+                data: row // Keep the raw row data for popups
+            });
+          });
+          resolve();
+        },
+        error(err) {
+          // IMPORTANT: Resolve the promise even on error so that the Promise.all continues and the map can still initialize.
+          console.error(`CSV load error for ${boroughName} (${csvPath}):`, err);
+          resolve(); 
+        }
+      });
+    });
+  }
+  
+  // ----------------------------------------------------
+  // III. TREE DRAWING (Simplified - no more filtering)
+  // ----------------------------------------------------
+  
+  /**
+   * Draws all loaded tree data onto the cluster layer.
+   */
+  function drawAllTrees(trees, clusterLayer, cfg) {
+      clusterLayer.clearLayers();
+      
+      trees.forEach(tree => {
+          const marker = L.marker([tree.lat, tree.lon], { icon: makeDivIcon(cfg.color, 8) });
+
+          const species = tree.data.Essence_ang ?? tree.data.ESSENCE ?? 'Unknown Species';
+          const planted = tree.data.Date_Plantation ? 
+                            tree.data.Date_Plantation.toString().substring(0, 10) : 
+                            'Unknown Date';
+          
+          const popup = `<b>Tree Species: ${species}</b><br>Planted: ${planted}<br>Borough: ${tree.borough}`;
+          
+          marker.bindPopup(popup);
+          clusterLayer.addLayer(marker);
+      });
+  }
+
+
+  // ----------------------------------------------------
+  // IV. GEOJSON LOADING FUNCTIONS
+  // ----------------------------------------------------
+  
+  function getHeatmapStyle(feature) {
+      const tempClass = feature.properties.Temp_Class;
+      let color;
+      let opacity;
+      
+      // Define colors based on Temperature Class (1=Cool, 3=Hot)
+      if (tempClass === 1) {
+          color = '#90e0ef'; // Light Blue/Cool
+          opacity = 0.5;
+      } else if (tempClass === 2) {
+          color = '#ffc107'; // Yellow/Medium
+          opacity = 0.5;
+      } else if (tempClass >= 3) {
+          color = '#dc3545'; // Red/Hot
+          opacity = 0.6;
+      } else {
+          color = '#ccc'; // Default/Unknown
+          opacity = 0.3;
+      }
+
+      return {
+          color: color, 
+          weight: 1,
+          fillColor: color, 
+          fillOpacity: opacity
+      };
+  }
+  
+  async function loadGeoJsonLayer(map, path, styleFunction, popupFunction, layerName, isDefaultLayer=false) {
+      try {
+          const response = await fetch(path);
+          if (!response.ok) throw new Error(`Failed to load ${layerName}: ${response.statusText}`);
+          const geoJsonData = await response.json();
+          
+          const layer = L.geoJSON(geoJsonData, {
+              style: styleFunction,
+              onEachFeature: (feature, layer) => {
+                  if (popupFunction) popupFunction(feature, layer);
+              }
+          });
+          
+          if (isDefaultLayer) {
+             // Add to map automatically (for Trees and Green Spaces)
+             layer.addTo(map);
+          } else {
+             // Add to overlay control structure (for Flood, Heatmap, Priority)
+             overlayLayers[layerName] = layer;
+          }
+
+      } catch (error) {
+          console.error(`Error loading ${layerName} GeoJSON:`, error);
+          // If it's a default layer, do nothing. If it's an overlay, use a dummy layer.
+          if (!isDefaultLayer) overlayLayers[layerName] = L.layerGroup(); 
+      }
+  }
+
+  // ----------------------------------------------------
+  // V. MAP INITIALIZATION 
+  // ----------------------------------------------------
+  
+  async function createMapIfNeeded(tabId) {
+    if (mapInstances[tabId]) {
+      mapInstance = mapInstances[tabId].map;
+      treeClusterLayer = mapInstances[tabId].cluster;
+      return mapInstance;
+    }
+
+    const cfg = TAB_CONFIG[tabId];
+    if (!cfg) return null;
+
+    clearContainer(cfg.mapDiv);
+    const mapDivEl = document.getElementById(cfg.mapDiv); 
+    mapDivEl.innerHTML = '<div class="loading-overlay">Initializing Map...</div>';
+
+    // 1. Initialize Map and Base Layers
+    const map = L.map(cfg.mapDiv).setView([45.5019, -73.5674], 11);
+    mapInstance = map;
+
+    const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles &copy; Esri' });
+    const terrainLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', { maxZoom: 20, attribution: '&copy; CARTO' });
+
+    const baseLayers = { "Standard Map": osmLayer, "True Satellite": satelliteLayer, "Minimalist Base": terrainLayer };
+
+    // 2. Load Tree Markers Data (Store Globally)
+    const treeCluster = L.markerClusterGroup({ maxClusterRadius: 40 });
+    treeClusterLayer = treeCluster;
+    
+    // Reset data and start loading all borough CSVs
+    allTreeData = []; 
+    const treeLoadPromises = Object.entries(cfg.tree_csv_files).map(([boroughName, csvPath]) => {
+      updateLoadingStatus(mapDivEl, boroughName);
+      return loadBoroughCsv(boroughName, csvPath); 
+    });
+
+    await Promise.all(treeLoadPromises); // Wait for all borough CSVs to load
+    
+    // 3. Load GeoJSON Overlays
+    
+    // A. Green Spaces Boundary (DEFAULT LAYER: isDefaultLayer=true)
+    await loadGeoJsonLayer(map, cfg.greenspace_geojson, 
+        { color: '#047857', weight: 1.5, fillColor: '#6ee7b7', fillOpacity: 0.6 },
+        (feature, layer) => {
+            const props = feature.properties;
+            const name = props.Nom || 'Unknown Green Space';
+            const area = props.SUPERFICIE ? (parseFloat(props.SUPERFICIE) * 10000).toFixed(2) + ' sq. m.' : 'Area Unknown';
+            const typo = props.TYPO1 || props.TYPO2 || 'N/A';
+            layer.bindPopup(`<b>${name}</b><br>Type: ${typo}<br>Area: ${area}<br>Ownership: ${props.PROPRIETE || 'Unknown'}`);
+        }, 
+        "Green Spaces Boundary", true
+    );
+    
+    // B. Flood Zones (OPTIONAL OVERLAY: isDefaultLayer=false)
+    await loadGeoJsonLayer(map, cfg.flood_geojson, 
+        { color: '#3b82f6', weight: 2, fillColor: '#60a5fa', fillOpacity: 0.4 },
+        (feature, layer) => {
+            const zoneName = feature.properties.NAME || feature.properties.RISK || 'N/A';
+            layer.bindPopup(`<b>Flood Zone</b><br>Risk Level: ${zoneName}`);
+        }, 
+        "Flood Zones", false
+    );
+    
+    // C. Heatmap Zones (OPTIONAL OVERLAY: isDefaultLayer=false)
+    await loadGeoJsonLayer(map, cfg.heat_geojson, 
+        getHeatmapStyle,
+        (feature, layer) => {
+            const tempClass = feature.properties.Temp_Class || 'N/A';
+            const legend = feature.properties.Legende || 'N/A';
+            layer.bindPopup(`<b>Heat Zone</b><br>Class: ${tempClass}<br>Description: ${legend}`);
+        }, 
+        "Heatmap Zones", false
+    );
+    
+    // D. Green Priority Zones (OPTIONAL OVERLAY: isDefaultLayer=false)
+    await loadGeoJsonLayer(map, cfg.greenprio_geojson, 
+        { color: '#888', weight: 1, fillColor: '#ccc', fillOpacity: 0.2, dashArray: '5, 5' },
+        (feature, layer) => {
+            // Generic popup, as property names are unknown
+            layer.bindPopup(`<b>Green Priority Zone</b><br>Check Layer Details`);
+        }, 
+        "Green Priority Zones", false
+    );
+    
+    // 4. Initial Tree Draw and Add to Map (DEFAULT LAYER)
+    drawAllTrees(allTreeData, treeCluster, cfg);
+    treeCluster.addTo(map);
+
+    // 5. Add Address Search (Geocoder)
+    const geocoderContainer = document.querySelector('.geocoder-control-container');
+    if (geocoderContainer) {
+        // Move the default geocoder control out of the map div and into our dedicated container
+        L.Control.geocoder({
+            defaultMarkGeocode: false, 
+            placeholder: 'Search Address in Montreal...',
+        })
+        .on('markgeocode', function(e) {
+            const bbox = e.geocode.bbox;
+            const poly = L.polygon([
+                [bbox.getSouthEast().lat, bbox.getSouthEast().lng],
+                [bbox.getNorthEast().lat, bbox.getNorthEast().lng],
+                [bbox.getNorthWest().lat, bbox.getNorthWest().lng],
+                [bbox.getSouthWest().lat, bbox.getSouthWest().lng]
+            ]);
+            
+            // Clear existing address markers
+            map.eachLayer(function(layer) {
+                if(layer.options && layer.options.isAddressMarker) {
+                    map.removeLayer(layer);
+                }
+            });
+
+            map.fitBounds(poly.getBounds(), { padding: [50, 50] }); 
+            L.marker(e.geocode.center, { 
+                icon: makeDivIcon('#e3000b', 12),
+                isAddressMarker: true // Custom option to identify this marker later
+            })
+            .bindPopup(`<b>${e.geocode.name}</b>`).addTo(map).openPopup(); 
+        })
+        .addTo(map)
+        .getContainer().parentNode.removeChild(map.getContainer().querySelector('.leaflet-control-geocoder')); // Remove from default position
+        geocoderContainer.appendChild(map.getContainer().querySelector('.leaflet-control-geocoder')); // Append to our custom div
+    }
+
+    // 6. Setup Layer Control (Simplified)
+    // Only includes the layers the user can toggle
+    const finalOverlays = {
+        "Flood Zones": overlayLayers["Flood Zones"],
+        "Heatmap Zones": overlayLayers["Heatmap Zones"],
+        "Green Priority Zones": overlayLayers["Green Priority Zones"] 
+    };
+
+    L.control.layers(baseLayers, finalOverlays).addTo(map);
+
+    // 7. Finalize Map View
+    if (treeCluster.getLayers().length > 0) {
+        // Fit bounds to the loaded tree data
+        map.fitBounds(treeCluster.getBounds(), { maxZoom: 15, padding:[20,20] });
+    } else {
+        // Fallback view if no data loaded
+        map.setView([45.5019, -73.5674], 11);
+    }
+    
+    const loader = mapDivEl.querySelector('.loading-overlay');
+    if (loader) loader.remove();
+
+
+    mapInstances[tabId] = { map, cluster: treeCluster };
+    return map;
+  }
+
+  // ----------------------------------------------------
+  // VI. VIEW SWITCHING
+  // ----------------------------------------------------
+
+  function switchView(tabId) {
+    // List all possible tabs
+    const all = ['home','greenspace','information','glossary'];
+
+    // Toggle content visibility
+    all.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (id === tabId) el.classList.add('active'); else el.classList.remove('active');
+    });
+
+    // Toggle nav link styles
+    ['nav-home','nav-greenspace','nav-information','nav-glossary'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const target = id.replace('nav-','');
+      if (target === tabId) el.classList.add('active'); else el.classList.remove('active');
+    });
+
+    // Handle map invalidation when switching to the map tab
+    if (tabId === 'greenspace') {
+      const map = createMapIfNeeded(tabId);
+      // Give the DOM a moment to adjust before telling Leaflet to redraw
+      if (map) setTimeout(()=>{ try{ map.invalidateSize(); } catch(e){ console.warn(e); } }, 120);
+    }
+  }
+
+  window.switchView = switchView; 
+  document.addEventListener('DOMContentLoaded', ()=>switchView('home'));
+  </script>
+</body>
+</html>
