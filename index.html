@@ -69,10 +69,10 @@
       padding: 20px;
     }
     
-    /* NEW: Geocoder Control styling to sit above the map */
+    /* Geocoder Control styling to sit above the map */
     .leaflet-control-geocoder {
         margin-bottom: 8px;
-        z-index: 800; /* Must be lower than loading overlay (1000) but higher than map (1) */
+        z-index: 800; 
     }
     .geocoder-control-container {
         display: flex;
@@ -81,7 +81,6 @@
         margin-bottom: 15px;
     }
     .leaflet-control-geocoder.leaflet-bar {
-        /* Makes the search bar wider than default on larger screens */
         min-width: 300px; 
         max-width: 90%;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -159,7 +158,7 @@
             <ul>
                 <li>**All Trees (Markers):** Individual street trees collected by the City of Montreal (Loaded by default).</li>
                 <li>**Green Spaces Boundary:** Boundaries of parks and green areas (Loaded by default).</li>
-                <li>**Heatmap Zones:** Areas categorized by potential heat exposure, often reflecting pavement and building density (Class 3 is generally the hottest).</li>
+                <li>**Heatmap Zones:** Areas categorized by potential heat exposure (1 = Coolest, 5 = Hottest). These layers are currently styled with a single color for testing.</li>
                 <li>**Flood Zones:** Areas identified as being at higher risk of flooding.</li>
                 <li>**Green Priority Zones:** Strategic areas identified by the city for future greening and ecological development.</li>
             </ul>
@@ -184,8 +183,8 @@
             <h4>Glossary of Terms</h4>
             <ul>
                 <li>**GeoJSON:** A standard format for encoding various geographic data structures using JSON.</li>
-                <li>**Urban Heat Island (UHI):** The phenomenon where urban areas are significantly warmer than surrounding rural areas due to human activities and materials (like asphalt).</li>
-                <li>**FeatureCollection:** The top-level GeoJSON object that contains an array of individual `Feature` objects (like parks or heat zones).</li>
+                <li>**EPSG:2950 (MTM Zone 8):** The projected coordinate system often used by the City of Montreal for spatial data (which requires the coordinate fix in this code).</li>
+                <li>**WGS84 (EPSG:4326):** The standard coordinate system (Longitude/Latitude) used by web mapping applications like Leaflet.</li>
             </ul>
         </div>
     </section>
@@ -201,34 +200,45 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   
   <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
-
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+  <script src="https://unpkg.com/proj4leaflet/src/proj4leaflet.js"></script>
   <script>
   // ----------------------------------------------------
   // I. CONFIGURATION & GLOBAL STATE
   // ----------------------------------------------------
+  
+  // 🟢 DEFINE THE MONTREAL COORDINATE SYSTEM (EPSG:2950 / MTM Zone 8) 🟢
+  // This step is crucial for proj4leaflet to understand the Easting/Northing coordinates
+  // and correctly transform them to Longitude/Latitude for Leaflet.
+  if (typeof proj4 !== 'undefined') {
+      proj4.defs(
+          "EPSG:2950", 
+          "+proj=tmerc +lat_0=0 +lon_0=-73.5 +k=0.9999 +x_0=300000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
+      );
+      // L.CRS.EPSG2950 is now available for use in GeoJSON options
+  }
   
   // Data will be stored here after initial load
   let allTreeData = [];
   let mapInstance = null;
   let treeClusterLayer = null;
 
-  // Define all individual borough CSV files for tree data (13 total)
-  // 🟢🟢🟢 FILE PATHS CORRECTED: REMOVED './data/' 🟢🟢🟢
+  // Define all individual borough CSV files for tree data 
   const BOROUGH_CSVS = {
-    // Keys (for display) keep accents. Values (paths) use the exact filename uploaded to the repository root.
-    'Ahuntsic - Cartierville': './Ahuntsic - Cartierville.csv',
-    'Côte-des-Neiges - Notre-Dame-de-Grâce': './Côte-des-Neiges - Notre-Dame-de-Grâce.csv', 
-    'Rivière-des-Prairies - Pointe-aux-Trembles': './Rivière-des-Prairies - Pointe-aux-Trembles.csv',
-    'Rosemont - La Petite-Patrie': './Rosemont - La Petite-Patrie.csv',
-    'Saint-Léonard': './Saint-Léonard.csv',
+    'Ahuntsic - Cartierville': './Ahuntsic_Cartierville.csv',
+    'Côte-des-Neiges - Notre-Dame-de-Grâce': './CDN_NDG.csv',
+    'Rivière-des-Prairies - Pointe-aux-Trembles': './RDP_PAT.csv',
+    'Rosemont - La Petite-Patrie': './Rosemont_Patrie.csv',
+    'Saint-Léonard': './Saint_Leonard.csv',
     'Verdun': './Verdun.csv',
-    'Ville-Marie': './Ville-Marie.csv',
+    'Ville-Marie': './Ville_Marie.csv',
     'Lachine': './Lachine.csv',
-    'Le Plateau-Mont-Royal': './Le Plateau-Mont-Royal.csv',
-    'Le Sud-Ouest': './Le Sud-Ouest.csv',
-    'Mercier - Hochelaga-Maisonneuve': './Mercier - Hochelaga-Maisonneuve.csv',
-    'Pierrefonds - Roxboro': './Pierrefonds - Roxboro.csv',
-    'Villeray-Saint-Michel - Parc-Extension': './Villeray-Saint-Michel - Parc-Extension.csv',
+    'Le Plateau-Mont-Royal': './Le_Plateau_MR.csv',
+    'Le Sud-Ouest': './Le_Sud_Ouest.csv',
+    'Mercier - Hochelaga-Maisonneuve': './Mercier_HM.csv',
+    'Pierrefonds - Roxboro': './Pierrefonds_Roxboro.csv',
+    'Villeray-Saint-Michel - Parc-Extension': './Villeray_SM_PE.csv',
   };
 
 
@@ -237,15 +247,14 @@
       mapDiv: 'greenspace-map', 
       color: '#047857', // Tree marker color
       tree_csv_files: BOROUGH_CSVS,
-      // GeoJSON Overlays - Paths Corrected (removed './data/')
+      // GeoJSON Overlays
       greenspace_geojson: './Green.geojson',
       flood_geojson: './Flood.geojson',
       heat_geojson: './Heat.geojson', 
-      greenprio_geojson: './GreenPrio.geojson' 
+      greenprio_geojson: './GreenPrio.json' // Note: This file name extension is fine if it contains GeoJSON data
     },
   };
-  // 🟢🟢🟢 END OF FILE PATH CORRECTION 🟢🟢🟢
-
+  
   // Only the optional layers will be explicitly managed in the layer control
   const overlayLayers = {
       "Flood Zones": L.layerGroup(), 
@@ -298,24 +307,21 @@
         skipEmptyLines: true,
         complete(results) {
           results.data.forEach(row => {
-            // Check for common variations of Lat/Lon fields (using both English and French headers)
-            const lat = row.Latitude ?? row.latitude ?? row.LAT ?? row.lat ?? row.Coord_Y ?? row.Y ?? null;
-            const lon = row.Longitude ?? row.longitude ?? row.LON ?? row.lon ?? row.Coord_X ?? row.X ?? null;
+            const lat = row.Latitude ?? row.latitude ?? row.LAT ?? row.lat ?? row.Coord_Y_WGS84 ?? null;
+            const lon = row.Longitude ?? row.longitude ?? row.LON ?? row.lon ?? row.Coord_X_WGS84 ?? null;
 
             if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) return; 
             
-            // Store the data and location for filtering
             allTreeData.push({
                 lat,
                 lon,
                 borough: boroughName,
-                data: row // Keep the raw row data for popups
+                data: row 
             });
           });
           resolve();
         },
         error(err) {
-          // IMPORTANT: Resolve the promise even on error so that the Promise.all continues and the map can still initialize.
           console.error(`CSV load error for ${boroughName} (${csvPath}):`, err);
           resolve(); 
         }
@@ -324,7 +330,7 @@
   }
   
   // ----------------------------------------------------
-  // III. TREE DRAWING (Simplified - no more filtering)
+  // III. TREE DRAWING AND GEOJSON STYLING
   // ----------------------------------------------------
   
   /**
@@ -336,10 +342,25 @@
       trees.forEach(tree => {
           const marker = L.marker([tree.lat, tree.lon], { icon: makeDivIcon(cfg.color, 8) });
 
+          // Attempt to find species using common column names
           const species = tree.data.Essence_ang ?? tree.data.ESSENCE ?? 'Unknown Species';
-          const planted = tree.data.Date_Plantation ? 
-                            tree.data.Date_Plantation.toString().substring(0, 10) : 
-                            'Unknown Date';
+          
+          // Attempt to find planting date
+          const plantedRaw = tree.data.Date_Plantation;
+          let planted = 'Unknown Date';
+          if (plantedRaw) {
+             try {
+                const date = new Date(plantedRaw);
+                if (!isNaN(date)) {
+                    planted = date.toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
+                } else {
+                    planted = plantedRaw.toString().substring(0, 10);
+                }
+             } catch(e) {
+                 planted = plantedRaw.toString().substring(0, 10);
+             }
+          }
+
           
           const popup = `<b>Tree Species: ${species}</b><br>Planted: ${planted}<br>Borough: ${tree.borough}`;
           
@@ -348,64 +369,55 @@
       });
   }
 
-
+  // NOTE: getHeatmapStyle function has been removed as requested. 
+  // A fixed style object is used in the loadGeoJsonLayer call instead.
+  
   // ----------------------------------------------------
   // IV. GEOJSON LOADING FUNCTIONS
   // ----------------------------------------------------
   
-  function getHeatmapStyle(feature) {
-      const tempClass = feature.properties.Temp_Class;
-      let color;
-      let opacity;
-      
-      // Define colors based on Temperature Class (1=Cool, 3=Hot)
-      if (tempClass === 1) {
-          color = '#90e0ef'; // Light Blue/Cool
-          opacity = 0.5;
-      } else if (tempClass === 2) {
-          color = '#ffc107'; // Yellow/Medium
-          opacity = 0.5;
-      } else if (tempClass >= 3) {
-          color = '#dc3545'; // Red/Hot
-          opacity = 0.6;
-      } else {
-          color = '#ccc'; // Default/Unknown
-          opacity = 0.3;
-      }
-
-      return {
-          color: color, 
-          weight: 1,
-          fillColor: color, 
-          fillOpacity: opacity
-      };
-  }
-  
-  async function loadGeoJsonLayer(map, path, styleFunction, popupFunction, layerName, isDefaultLayer=false) {
+  /**
+   * Function to load GeoJSON data and add it to the map/layer control.
+   * It now accepts an optional 'options' object for projection settings (CRS).
+   */
+  async function loadGeoJsonLayer(map, path, styleFunctionOrObject, popupFunction, layerName, isDefaultLayer=false, options={}) {
       try {
           const response = await fetch(path);
+          const contentType = response.headers.get("content-type");
           if (!response.ok) throw new Error(`Failed to load ${layerName}: ${response.statusText}`);
-          const geoJsonData = await response.json();
           
+          let geoJsonData;
+          if (contentType && (contentType.includes("json") || contentType.includes("geo+json"))) {
+              geoJsonData = await response.json();
+          } else {
+              const text = await response.text();
+              geoJsonData = JSON.parse(text);
+          }
+          
+          // Determine the style function/object
+          const finalStyle = typeof styleFunctionOrObject === 'function' 
+                             ? styleFunctionOrObject 
+                             : (feature) => styleFunctionOrObject; 
+
+          // Pass the options object here (contains the crs for EPSG:2950)
           const layer = L.geoJSON(geoJsonData, {
-              style: styleFunction,
+              style: finalStyle,
               onEachFeature: (feature, layer) => {
                   if (popupFunction) popupFunction(feature, layer);
-              }
+              },
+              ...options 
           });
           
           if (isDefaultLayer) {
-             // Add to map automatically (for Trees and Green Spaces)
              layer.addTo(map);
+             overlayLayers[layerName] = layer;
           } else {
-             // Add to overlay control structure (for Flood, Heatmap, Priority)
              overlayLayers[layerName] = layer;
           }
 
       } catch (error) {
           console.error(`Error loading ${layerName} GeoJSON:`, error);
-          // If it's a default layer, do nothing. If it's an overlay, use a dummy layer.
-          if (!isDefaultLayer) overlayLayers[layerName] = L.layerGroup(); 
+          overlayLayers[layerName] = L.layerGroup(); 
       }
   }
 
@@ -452,7 +464,7 @@
     
     // 3. Load GeoJSON Overlays
     
-    // A. Green Spaces Boundary (DEFAULT LAYER: isDefaultLayer=true)
+    // A. Green Spaces Boundary (DEFAULT LAYER - WGS84 coordinates expected)
     await loadGeoJsonLayer(map, cfg.greenspace_geojson, 
         { color: '#047857', weight: 1.5, fillColor: '#6ee7b7', fillOpacity: 0.6 },
         (feature, layer) => {
@@ -462,38 +474,42 @@
             const typo = props.TYPO1 || props.TYPO2 || 'N/A';
             layer.bindPopup(`<b>${name}</b><br>Type: ${typo}<br>Area: ${area}<br>Ownership: ${props.PROPRIETE || 'Unknown'}`);
         }, 
-        "Green Spaces Boundary", true
+        "Green Spaces Boundary", true, 
+        {} 
     );
     
-    // B. Flood Zones (OPTIONAL OVERLAY: isDefaultLayer=false)
+    // B. Flood Zones (OPTIONAL OVERLAY - WGS84 coordinates expected)
     await loadGeoJsonLayer(map, cfg.flood_geojson, 
         { color: '#3b82f6', weight: 2, fillColor: '#60a5fa', fillOpacity: 0.4 },
         (feature, layer) => {
             const zoneName = feature.properties.NAME || feature.properties.RISK || 'N/A';
             layer.bindPopup(`<b>Flood Zone</b><br>Risk Level: ${zoneName}`);
         }, 
-        "Flood Zones", false
+        "Flood Zones", false, 
+        {} 
     );
     
-    // C. Heatmap Zones (OPTIONAL OVERLAY: isDefaultLayer=false)
+    // C. Heatmap Zones (OPTIONAL OVERLAY - 🟢 EPSG:2950 COORDINATE FIX APPLIED 🟢)
     await loadGeoJsonLayer(map, cfg.heat_geojson, 
-        getHeatmapStyle,
+        { color: '#dc3545', weight: 1, fillColor: '#ffc107', fillOpacity: 0.5 }, // <-- FIXED STYLE for testing
         (feature, layer) => {
             const tempClass = feature.properties.Temp_Class || 'N/A';
             const legend = feature.properties.Legende || 'N/A';
             layer.bindPopup(`<b>Heat Zone</b><br>Class: ${tempClass}<br>Description: ${legend}`);
         }, 
-        "Heatmap Zones", false
+        "Heatmap Zones", false,
+        { crs: L.CRS.EPSG2950 } // <-- THIS FIXES THE COORDINATE FLIP/PROJECTION
     );
     
-    // D. Green Priority Zones (OPTIONAL OVERLAY: isDefaultLayer=false)
+    // D. Green Priority Zones (OPTIONAL OVERLAY - 🟢 EPSG:2950 COORDINATE FIX APPLIED 🟢)
     await loadGeoJsonLayer(map, cfg.greenprio_geojson, 
-        { color: '#888', weight: 1, fillColor: '#ccc', fillOpacity: 0.2, dashArray: '5, 5' },
+        { color: '#9333ea', weight: 2, fillColor: 'none', fillOpacity: 0, dashArray: '8, 4' }, 
         (feature, layer) => {
             // Generic popup, as property names are unknown
             layer.bindPopup(`<b>Green Priority Zone</b><br>Check Layer Details`);
         }, 
-        "Green Priority Zones", false
+        "Green Priority Zones", false,
+        { crs: L.CRS.EPSG2950 } // <-- THIS FIXES THE COORDINATE FLIP/PROJECTION
     );
     
     // 4. Initial Tree Draw and Add to Map (DEFAULT LAYER)
@@ -502,56 +518,61 @@
 
     // 5. Add Address Search (Geocoder)
     const geocoderContainer = document.querySelector('.geocoder-control-container');
-    if (geocoderContainer) {
-        // Move the default geocoder control out of the map div and into our dedicated container
-        L.Control.geocoder({
-            defaultMarkGeocode: false, 
-            placeholder: 'Search Address in Montreal...',
-        })
-        .on('markgeocode', function(e) {
-            const bbox = e.geocode.bbox;
-            const poly = L.polygon([
-                [bbox.getSouthEast().lat, bbox.getSouthEast().lng],
-                [bbox.getNorthEast().lat, bbox.getNorthEast().lng],
-                [bbox.getNorthWest().lat, bbox.getNorthWest().lng],
-                [bbox.getSouthWest().lat, bbox.getSouthWest().lng]
-            ]);
-            
-            // Clear existing address markers
-            map.eachLayer(function(layer) {
-                if(layer.options && layer.options.isAddressMarker) {
-                    map.removeLayer(layer);
-                }
-            });
+    const geocoder = L.Control.geocoder({
+        defaultMarkGeocode: false, 
+        placeholder: 'Search Address in Montreal...',
+    });
 
-            map.fitBounds(poly.getBounds(), { padding: [50, 50] }); 
-            L.marker(e.geocode.center, { 
-                icon: makeDivIcon('#e3000b', 12),
-                isAddressMarker: true // Custom option to identify this marker later
-            })
-            .bindPopup(`<b>${e.geocode.name}</b>`).addTo(map).openPopup(); 
+    geocoder.on('markgeocode', function(e) {
+        const bbox = e.geocode.bbox;
+        const poly = L.polygon([
+            [bbox.getSouthEast().lat, bbox.getSouthEast().lng],
+            [bbox.getNorthEast().lat, bbox.getNorthEast().lng],
+            [bbox.getNorthWest().lat, bbox.getNorthWest().lng],
+            [bbox.getSouthWest().lat, bbox.getSouthWest().lng]
+        ]);
+        
+        map.eachLayer(function(layer) {
+            if(layer.options && layer.options.isAddressMarker) {
+                map.removeLayer(layer);
+            }
+        });
+
+        map.fitBounds(poly.getBounds(), { padding: [50, 50] }); 
+        L.marker(e.geocode.center, { 
+            icon: makeDivIcon('#e3000b', 12),
+            isAddressMarker: true 
         })
-        .addTo(map)
-        .getContainer().parentNode.removeChild(map.getContainer().querySelector('.leaflet-control-geocoder')); // Remove from default position
-        geocoderContainer.appendChild(map.getContainer().querySelector('.leaflet-control-geocoder')); // Append to our custom div
+        .bindPopup(`<b>${e.geocode.name}</b>`).addTo(map).openPopup(); 
+    }).addTo(map);
+    
+    // Move the geocoder control element into the dedicated container
+    const geocoderControlEl = map.getContainer().querySelector('.leaflet-control-geocoder');
+    if (geocoderControlEl) {
+        geocoderControlEl.parentNode.removeChild(geocoderControlEl);
+        geocoderContainer.appendChild(geocoderControlEl); 
     }
 
-    // 6. Setup Layer Control (Simplified)
-    // Only includes the layers the user can toggle
+
+    // 6. Setup Layer Control
     const finalOverlays = {
+        "Trees (Markers)": treeCluster,
+        "Green Spaces Boundary": overlayLayers["Green Spaces Boundary"], 
         "Flood Zones": overlayLayers["Flood Zones"],
         "Heatmap Zones": overlayLayers["Heatmap Zones"],
         "Green Priority Zones": overlayLayers["Green Priority Zones"] 
     };
+    Object.keys(finalOverlays).forEach(key => {
+        if (!finalOverlays[key]) delete finalOverlays[key];
+    });
+
 
     L.control.layers(baseLayers, finalOverlays).addTo(map);
 
     // 7. Finalize Map View
     if (treeCluster.getLayers().length > 0) {
-        // Fit bounds to the loaded tree data
         map.fitBounds(treeCluster.getBounds(), { maxZoom: 15, padding:[20,20] });
     } else {
-        // Fallback view if no data loaded
         map.setView([45.5019, -73.5674], 11);
     }
     
@@ -568,17 +589,14 @@
   // ----------------------------------------------------
 
   function switchView(tabId) {
-    // List all possible tabs
     const all = ['home','greenspace','information','glossary'];
 
-    // Toggle content visibility
     all.forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       if (id === tabId) el.classList.add('active'); else el.classList.remove('active');
     });
 
-    // Toggle nav link styles
     ['nav-home','nav-greenspace','nav-information','nav-glossary'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -586,10 +604,8 @@
       if (target === tabId) el.classList.add('active'); else el.classList.remove('active');
     });
 
-    // Handle map invalidation when switching to the map tab
     if (tabId === 'greenspace') {
       const map = createMapIfNeeded(tabId);
-      // Give the DOM a moment to adjust before telling Leaflet to redraw
       if (map) setTimeout(()=>{ try{ map.invalidateSize(); } catch(e){ console.warn(e); } }, 120);
     }
   }
