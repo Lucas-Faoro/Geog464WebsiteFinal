@@ -213,22 +213,22 @@
   let treeClusterLayer = null;
 
   // Define all individual borough CSV files for tree data (13 total)
-  // UPDATED TO USE ASCII-SAFE, UNDERSCORE SEPARATED FILE NAMES
+  // 🟢🟢🟢 FILE PATHS CORRECTED: REMOVED './data/' 🟢🟢🟢
   const BOROUGH_CSVS = {
-    // Key is for display/internal use (can keep accents). Value is the safe filename path.
-    'Ahuntsic - Cartierville': './data/Ahuntsic_Cartierville.csv',
-    'Côte-des-Neiges - Notre-Dame-de-Grâce': './data/CDN_NDG.csv',
-    'Rivière-des-Prairies - Pointe-aux-Trembles': './data/RDP_PAT.csv',
-    'Rosemont - La Petite-Patrie': './data/Rosemont_Patrie.csv',
-    'Saint-Léonard': './data/Saint_Leonard.csv',
-    'Verdun': './data/Verdun.csv',
-    'Ville-Marie': './data/Ville_Marie.csv',
-    'Lachine': './data/Lachine.csv',
-    'Le Plateau-Mont-Royal': './data/Le_Plateau_MR.csv',
-    'Le Sud-Ouest': './data/Le_Sud_Ouest.csv',
-    'Mercier - Hochelaga-Maisonneuve': './data/Mercier_HM.csv',
-    'Pierrefonds - Roxboro': './data/Pierrefonds_Roxboro.csv',
-    'Villeray-Saint-Michel - Parc-Extension': './data/Villeray_SM_PE.csv',
+    // Keys (for display) keep accents. Values (paths) use the exact filename uploaded to the repository root.
+    'Ahuntsic - Cartierville': './Ahuntsic - Cartierville.csv',
+    'Côte-des-Neiges - Notre-Dame-de-Grâce': './Côte-des-Neiges - Notre-Dame-de-Grâce.csv', 
+    'Rivière-des-Prairies - Pointe-aux-Trembles': './Rivière-des-Prairies - Pointe-aux-Trembles.csv',
+    'Rosemont - La Petite-Patrie': './Rosemont - La Petite-Patrie.csv',
+    'Saint-Léonard': './Saint-Léonard.csv',
+    'Verdun': './Verdun.csv',
+    'Ville-Marie': './Ville-Marie.csv',
+    'Lachine': './Lachine.csv',
+    'Le Plateau-Mont-Royal': './Le Plateau-Mont-Royal.csv',
+    'Le Sud-Ouest': './Le Sud-Ouest.csv',
+    'Mercier - Hochelaga-Maisonneuve': './Mercier - Hochelaga-Maisonneuve.csv',
+    'Pierrefonds - Roxboro': './Pierrefonds - Roxboro.csv',
+    'Villeray-Saint-Michel - Parc-Extension': './Villeray-Saint-Michel - Parc-Extension.csv',
   };
 
 
@@ -237,13 +237,14 @@
       mapDiv: 'greenspace-map', 
       color: '#047857', // Tree marker color
       tree_csv_files: BOROUGH_CSVS,
-      // GeoJSON Overlays - Paths match uploaded file names
-      greenspace_geojson: './data/Green.geojson',
-      flood_geojson: './data/Flood.geojson',
-      heat_geojson: './data/Heat.geojson', 
-      greenprio_geojson: './data/GreenPrio.geojson' 
+      // GeoJSON Overlays - Paths Corrected (removed './data/')
+      greenspace_geojson: './Green.geojson',
+      flood_geojson: './Flood.geojson',
+      heat_geojson: './Heat.geojson', 
+      greenprio_geojson: './GreenPrio.geojson' 
     },
   };
+  // 🟢🟢🟢 END OF FILE PATH CORRECTION 🟢🟢🟢
 
   // Only the optional layers will be explicitly managed in the layer control
   const overlayLayers = {
