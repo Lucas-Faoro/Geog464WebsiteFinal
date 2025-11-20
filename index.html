@@ -183,7 +183,7 @@
             <h4>Glossary of Terms</h4>
             <ul>
                 <li>**GeoJSON:** A standard format for encoding various geographic data structures using JSON.</li>
-                <li>**EPSG:2950 (MTM Zone 8):** The projected coordinate system often used by the City of Montreal for spatial data (which requires the coordinate fix in this code).</li>
+                <li>**EPSG:2950 (MTM Zone 8):** The projected coordinate system often used by the City of Montreal for spatial data. This format requires **coordinate projection and a coordinate swap** to display correctly in Leaflet.</li>
                 <li>**WGS84 (EPSG:4326):** The standard coordinate system (Longitude/Latitude) used by web mapping applications like Leaflet.</li>
             </ul>
         </div>
@@ -209,14 +209,11 @@
   // ----------------------------------------------------
   
   // 🟢 DEFINE THE MONTREAL COORDINATE SYSTEM (EPSG:2950 / MTM Zone 8) 🟢
-  // This step is crucial for proj4leaflet to understand the Easting/Northing coordinates
-  // and correctly transform them to Longitude/Latitude for Leaflet.
   if (typeof proj4 !== 'undefined') {
       proj4.defs(
           "EPSG:2950", 
           "+proj=tmerc +lat_0=0 +lon_0=-73.5 +k=0.9999 +x_0=300000 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs"
       );
-      // L.CRS.EPSG2950 is now available for use in GeoJSON options
   }
   
   // Data will be stored here after initial load
@@ -226,19 +223,19 @@
 
   // Define all individual borough CSV files for tree data 
   const BOROUGH_CSVS = {
-    'Ahuntsic - Cartierville': './Ahuntsic_Cartierville.csv',
-    'Côte-des-Neiges - Notre-Dame-de-Grâce': './CDN_NDG.csv',
-    'Rivière-des-Prairies - Pointe-aux-Trembles': './RDP_PAT.csv',
-    'Rosemont - La Petite-Patrie': './Rosemont_Patrie.csv',
-    'Saint-Léonard': './Saint_Leonard.csv',
+    'Ahuntsic - Cartierville': './Ahuntsic - Cartierville.csv', // Corrected name to match snippet
+    'Côte-des-Neiges - Notre-Dame-de-Grâce': './Côte-des-Neiges - Notre-Dame-de-Grâce.csv', // Used corrected name
+    'Rivière-des-Prairies - Pointe-aux-Trembles': './Rivière-des-Prairies - Pointe-aux-Trembles.csv', // Used corrected name
+    'Rosemont - La Petite-Patrie': './Rosemont - La Petite-Patrie.csv', // Corrected name to match snippet
+    'Saint-Léonard': './Saint-Léonard.csv', // Used corrected name
     'Verdun': './Verdun.csv',
-    'Ville-Marie': './Ville_Marie.csv',
+    'Ville-Marie': './Ville-Marie.csv',
     'Lachine': './Lachine.csv',
-    'Le Plateau-Mont-Royal': './Le_Plateau_MR.csv',
-    'Le Sud-Ouest': './Le_Sud_Ouest.csv',
-    'Mercier - Hochelaga-Maisonneuve': './Mercier_HM.csv',
-    'Pierrefonds - Roxboro': './Pierrefonds_Roxboro.csv',
-    'Villeray-Saint-Michel - Parc-Extension': './Villeray_SM_PE.csv',
+    'Le Plateau-Mont-Royal': './Le Plateau-Mont-Royal.csv',
+    'Le Sud-Ouest': './Le Sud-Ouest.csv',
+    'Mercier - Hochelaga-Maisonneuve': './Mercier - Hochelaga-Maisonneuve.csv',
+    'Pierrefonds - Roxboro': './Pierrefonds - Roxboro.csv',
+    'Villeray-Saint-Michel - Parc-Extension': './Villeray-Saint-Michel - Parc-Extension.csv',
   };
 
 
@@ -251,7 +248,7 @@
       greenspace_geojson: './Green.geojson',
       flood_geojson: './Flood.geojson',
       heat_geojson: './Heat.geojson', 
-      greenprio_geojson: './GreenPrio.json' // Note: This file name extension is fine if it contains GeoJSON data
+      greenprio_geojson: './GreenPrio.geojson' // Corrected extension based on GeoJSON data, though .json would work
     },
   };
   
@@ -297,6 +294,7 @@
 
   /**
    * Loads a single CSV file, parses it, and adds the raw data to the global allTreeData array.
+   * 🟢 FIX: Improved coordinate parsing to be more robust against mixed data types/empty cells.
    */
   function loadBoroughCsv(boroughName, csvPath) {
     return new Promise((resolve, reject) => {
@@ -307,14 +305,23 @@
         skipEmptyLines: true,
         complete(results) {
           results.data.forEach(row => {
-            const lat = row.Latitude ?? row.latitude ?? row.LAT ?? row.lat ?? row.Coord_Y_WGS84 ?? null;
-            const lon = row.Longitude ?? row.longitude ?? row.LON ?? row.lon ?? row.Coord_X_WGS84 ?? null;
+            // Rely on the WGS84 Longitude/Latitude columns, which are consistently in the snippets
+            let lat = row.Latitude;
+            let lon = row.Longitude;
 
-            if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) return; 
+            // Use parseFloat to ensure they are treated as numbers, handling potential string/null issues
+            const finalLat = parseFloat(lat);
+            const finalLon = parseFloat(lon);
+
+            // Check for valid WGS84 coordinates in the Montreal area
+            // Montreal Lat: 45.4 to 45.7, Lon: -73.5 to -73.9
+            if (isNaN(finalLat) || isNaN(finalLon) || finalLat < 45.2 || finalLat > 46.0 || finalLon < -74.0 || finalLon > -73.0) {
+                return; // Skip invalid or out-of-bounds points
+            }
             
             allTreeData.push({
-                lat,
-                lon,
+                lat: finalLat,
+                lon: finalLon,
                 borough: boroughName,
                 data: row 
             });
@@ -323,7 +330,7 @@
         },
         error(err) {
           console.error(`CSV load error for ${boroughName} (${csvPath}):`, err);
-          resolve(); 
+          resolve(); // Resolve even on error to continue loading other files
         }
       });
     });
@@ -351,13 +358,15 @@
           if (plantedRaw) {
              try {
                 const date = new Date(plantedRaw);
-                if (!isNaN(date)) {
+                // Check if the date object is valid
+                if (!isNaN(date) && date.getFullYear() > 1900 && date.getFullYear() < 2100) { 
                     planted = date.toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
-                } else {
-                    planted = plantedRaw.toString().substring(0, 10);
+                } else if (typeof plantedRaw === 'string') {
+                    // Fallback for simple date strings
+                    planted = plantedRaw.substring(0, 10);
                 }
              } catch(e) {
-                 planted = plantedRaw.toString().substring(0, 10);
+                 if (typeof plantedRaw === 'string') planted = plantedRaw.substring(0, 10);
              }
           }
 
@@ -369,16 +378,12 @@
       });
   }
 
-  // NOTE: getHeatmapStyle function has been removed as requested. 
-  // A fixed style object is used in the loadGeoJsonLayer call instead.
-  
   // ----------------------------------------------------
   // IV. GEOJSON LOADING FUNCTIONS
   // ----------------------------------------------------
   
   /**
    * Function to load GeoJSON data and add it to the map/layer control.
-   * It now accepts an optional 'options' object for projection settings (CRS).
    */
   async function loadGeoJsonLayer(map, path, styleFunctionOrObject, popupFunction, layerName, isDefaultLayer=false, options={}) {
       try {
@@ -387,6 +392,7 @@
           if (!response.ok) throw new Error(`Failed to load ${layerName}: ${response.statusText}`);
           
           let geoJsonData;
+          // Robustly parse the content, even if the mime type is generic (like .json)
           if (contentType && (contentType.includes("json") || contentType.includes("geo+json"))) {
               geoJsonData = await response.json();
           } else {
@@ -399,7 +405,7 @@
                              ? styleFunctionOrObject 
                              : (feature) => styleFunctionOrObject; 
 
-          // Pass the options object here (contains the crs for EPSG:2950)
+          // Pass all options, including the new coordinate swap for EPSG:2950
           const layer = L.geoJSON(geoJsonData, {
               style: finalStyle,
               onEachFeature: (feature, layer) => {
@@ -413,6 +419,7 @@
              overlayLayers[layerName] = layer;
           } else {
              overlayLayers[layerName] = layer;
+             // Do not add optional layers to map initially
           }
 
       } catch (error) {
@@ -498,7 +505,11 @@
             layer.bindPopup(`<b>Heat Zone</b><br>Class: ${tempClass}<br>Description: ${legend}`);
         }, 
         "Heatmap Zones", false,
-        { crs: L.CRS.EPSG2950 } // <-- THIS FIXES THE COORDINATE FLIP/PROJECTION
+        { 
+            crs: L.CRS.EPSG2950,
+            // 🟢 FIX: Swap [X, Y] to [Y, X] for Leaflet to consume planar coordinates correctly
+            coordsToLatLng: (coords) => new L.LatLng(coords[1], coords[0]) 
+        } 
     );
     
     // D. Green Priority Zones (OPTIONAL OVERLAY - 🟢 EPSG:2950 COORDINATE FIX APPLIED 🟢)
@@ -509,7 +520,11 @@
             layer.bindPopup(`<b>Green Priority Zone</b><br>Check Layer Details`);
         }, 
         "Green Priority Zones", false,
-        { crs: L.CRS.EPSG2950 } // <-- THIS FIXES THE COORDINATE FLIP/PROJECTION
+        { 
+            crs: L.CRS.EPSG2950,
+            // 🟢 FIX: Swap [X, Y] to [Y, X] for Leaflet to consume planar coordinates correctly
+            coordsToLatLng: (coords) => new L.LatLng(coords[1], coords[0])
+        } 
     );
     
     // 4. Initial Tree Draw and Add to Map (DEFAULT LAYER)
