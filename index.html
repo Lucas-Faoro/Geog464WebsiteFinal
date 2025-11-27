@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Montreal Eco Map</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <!-- MarkerCluster CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"/>
+  <!-- Geocoder CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css"/>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- MarkerCluster JS -->
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <!-- Geocoder JS -->
+  <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+  <!-- PapaParse for CSV -->
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <style>
+    /* ------------------------------------------------ */
+    /* BASE STYLES                                    */
+    /* ------------------------------------------------ */
+    body { 
+      font-family: Arial, sans-serif; 
+      margin:0; 
+      background:#f5f0e1; 
+      color:#333; 
+      display:flex; 
+      flex-direction:column; 
+      min-height:100vh; 
+    }
+    .container { width:95%; max-width:1400px; margin:0 auto; padding:20px; }
+    header { background:#6a4e3d; color:#fff; padding:18px 0; margin-bottom:8px; }
+    header .logo { font-size:1.6rem; text-transform:uppercase; letter-spacing:1px; font-weight:700; }
+    header nav { display:flex; gap:20px; align-items:center; justify-content:flex-end; }
+    header nav a { color:#fff; text-decoration:none; font-weight:bold; font-size:1rem; cursor:pointer; transition:color 0.3s; }
+    header nav a:hover, header nav a.active { color:#c6e0b4; }
+
+    /* ------------------------------------------------ */
+    /* TABS & CONTENT                                 */
+    /* ------------------------------------------------ */
+    .tab-content { display:none; animation:fadeIn 0.4s ease; }
+    .tab-content.active { display:block; }
+    @keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
+
+    /* ------------------------------------------------ */
+    /* HOME TAB                                       */
+    /* ------------------------------------------------ */
+    .hero-section {
+      background:#1e3e24;
+      height:600px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#fff;
+      text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.25); margin-bottom:40px;
+    }
+    .hero-text h1 { font-size:3rem; text-shadow:2px 2px 6px rgba(0,0,0,0.6); margin:0 0 10px; }
+    .hero-text p { font-size:1.3rem; text-shadow:1px 1px 4px rgba(0,0,0,0.6); }
+    .btn-cta {
+      background:#f5f0e1; color:#333; padding:14px 26px; border-radius:4px;
+      text-decoration:none; font-weight:bold; font-size:1.1rem; transition:background 0.3s; display:inline-block; margin-top:20px; cursor: pointer;
+    }
+    .btn-cta:hover { background:#3c6e46; }
+
+    /* ------------------------------------------------ */
+    /* MAP TAB                                        */
+    /* ------------------------------------------------ */
+    .map-wrapper { display:flex; gap:15px; flex-wrap:nowrap; height: 75vh; }
+    /* Responsive adjustment for small screens */
+    @media (max-width: 900px) {
+        .map-wrapper { flex-direction: column; height: auto; }
+        .sidebar { flex: 0 0 auto; margin-bottom: 20px; max-height: 40vh; }
+        .main-map-area { height: 70vh; } /* Ensure map retains height on mobile */
+    }
+
+    .sidebar { 
+      flex:0 0 220px; background:#fff; padding:15px; border-radius:8px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow-y: auto;
+    }
+    .main-map-area { flex:1; position:relative; height: 100%; }
+    #map { width:100%; height:100%; border-radius:8px; border:2px solid #ccc; z-index:1; }
+
+    /* Controls */
+    .control-group { margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px; }
+    .control-group:last-child { border-bottom:none; }
+    .control-group h3 { margin:0 0 8px; font-size:1rem; color:#555; font-weight: bold; }
+    .checkbox-label { display:flex; align-items:center; gap:8px; margin-bottom:6px; cursor:pointer; font-size:0.9rem; }
+    
+    /* AQI Info Panel (Moved from L.control to sidebar) */
+    .aqi-info-panel {
+        background: #f9fafb;
+        padding: 10px;
+        border-radius: 5px;
+        box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        font-size: 0.9rem;
+        border-left: 4px solid #4e8d5a;
+        margin-top: 15px;
+        display: none; /* Hidden by default */
+    }
+    .aqi-info-panel h4 { margin: 0 0 5px; font-size: 1em; color: #4e8d5a; }
+
+    /* Legend */
+    .legend-control {
+      position: absolute; bottom: 20px; right: 20px; z-index: 1000;
+      background: rgba(255, 255, 255, 0.9); padding: 10px; border-radius: 5px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.2); font-size: 0.8rem;
+      max-height: 300px; overflow-y: auto; display: none; /* Hidden by default */
+    }
+    .legend-section { margin-bottom: 10px; }
+    .legend-title { font-weight: bold; margin-bottom: 5px; }
+    .legend-item { display: flex; align-items: center; margin-bottom: 3px; }
+    .legend-color { width: 14px; height: 14px; margin-right: 6px; border: 1px solid #ccc; display: inline-block;}
+    /* Custom style for the small green circle marker in the legend */
+    .legend-color.tree-marker { background:#4e8d5a; border-radius: 50%; border: 1px solid #3c6e46;}
+
+
+    /* AQI Month Selector (Hidden by default) */
+    #aqi-month-control { display: none; margin-top: 10px; padding: 8px; background: #f9fafb; border-radius: 4px; border: 1px solid #eee;}
+    #aqi-month-select { width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #ccc; font-size: 0.9rem; }
+
+    /* Loading Overlay */
+    #loading-overlay {
+      position:absolute; top:0; left:0; width:100%; height:100%;
+      background:rgba(255,255,255,0.85); z-index:2000;
+      display:flex; align-items:center; justify-content:center; flex-direction:column;
+      border-radius:8px; font-size:1.2rem; color:#444;
+    }
+    .spinner {
+      width:40px; height:40px; border:5px solid #ccc; border-top-color:#4e8d5a;
+      border-radius:50%; animation:spin 1s linear infinite; margin-bottom:15px;
+    }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* ------------------------------------------------ */
+    /* INFO & GLOSSARY                                */
+    /* ------------------------------------------------ */
+    .info-block { background:#fff; padding:25px; border-radius:8px; margin-bottom:20px; box-shadow:0 2px 6px rgba(0,0,0,0.06); }
+    .info-block h2 { margin-top:0; color:#6a4e3d; border-bottom:2px solid #eee; padding-bottom:10px; }
+    footer { text-align:center; padding:20px; font-size:0.9rem; color:#777; border-top:1px solid #e0e0e0; margin-top:auto; }
+
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="container" style="display:flex; justify-content:space-between; align-items:center;">
+      <div class="logo">Montreal Eco Map</div>
+      <nav>
+        <a id="nav-home" onclick="switchView('home')" class="active">Home</a>
+        <a id="nav-greenspace" onclick="switchView('greenspace')">Interactive Map</a>
+        <a id="nav-information" onclick="switchView('information')">Information</a>
+        <a id="nav-glossary" onclick="switchView('glossary')">Help</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- TAB: HOME -->
+  <div id="home" class="tab-content active">
+    <div class="container">
+      <div class="hero-section">
+        <div class="hero-text">
+          <h1>Explore Different Ecological Factors in Montreal</h1>
+          <p>Green Space / Heat Map / Flood Zone / Air Quality</p>
+          <a class="btn-cta" onclick="switchView('greenspace')">View the Map</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: GREENSPACE MAP -->
+  <div id="greenspace" class="tab-content">
+    <div class="container" style="width: 98%; max-width: 100%;">
+      <div class="map-wrapper">
+        
+        <!-- Sidebar Controls -->
+        <aside class="sidebar">
+          <h2 style="margin-top:0; border-bottom:2px solid #eee; padding-bottom:10px; font-size: 1.2rem;">Map Layers</h2>
+          
+          <!-- Base Layers -->
+          <div class="control-group">
+            <h3>Base Data</h3>
+            <label class="checkbox-label">
+              <input type="checkbox" id="chk-trees" onchange="toggleLayer('trees')"> 
+              Public Trees
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="chk-green" onchange="toggleLayer('green')"> 
+              Green Spaces
+            </label>
+          </div>
+
+          <!-- Analysis Layers (Checkboxes for Overlap) -->
+          <div class="control-group">
+            <h3>Analysis Layers</h3>
+            <label class="checkbox-label">
+              <input type="checkbox" id="chk-heat" onchange="toggleLayer('heat')"> 
+              Urban Heat Islands
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="chk-flood" onchange="toggleLayer('flood')"> 
+              Flood Risk Zones
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="chk-prio" onchange="toggleLayer('prio')"> 
+              Greening Priority
+            </label>
+             <label class="checkbox-label">
+              <input type="checkbox" id="chk-aqi" onchange="toggleLayer('aqi')"> 
+              Air Quality Index
+            </label>
+          </div>
+          
+          <!-- AQI Month Selector -->
+          <div id="aqi-month-control">
+             <h3 style="font-size: 0.9rem; margin-bottom: 5px;">Select AQI Month</h3>
+             <select id="aqi-month-select">
+                <option value="1">January</option>
+                <option value="2">February</option>
+                <option value="3">March</option>
+                <option value="4">April</option>
+                <option value="5">May</option>
+                <option value="6">June</option>
+                <option value="7">July</option>
+                <option value="8">August</option>
+                <option value="9">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+             </select>
+             <p style="font-size:0.75em; color:#666; margin-top:5px;">Shows Monthly Mean</p>
+          </div>
+
+          <div class="control-group" style="margin-top: 20px;">
+             <button onclick="map.setView([45.55, -73.70], 11)" style="width:100%; padding:8px; background:#ddd; border:none; cursor:pointer; border-radius:4px; font-weight:bold; font-size: 0.9rem;">Reset View</button>
+          </div>
+          
+          <!-- AQI Info Panel (Relocated to Sidebar) -->
+          <!-- The panel is placed BELOW the Reset View button -->
+          <div id="aqi-info-panel" class="aqi-info-panel">
+            <!-- Content for AQI Info will be injected here on hover -->
+          </div>
+        </aside>
+
+        <!-- Map Area -->
+        <div class="main-map-area">
+          <div id="map"></div>
+          <div id="loading-overlay">
+            <div class="spinner"></div>
+            <span>Loading Map Data...</span>
+          </div>
+          <div id="map-legend" class="legend-control"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: INFORMATION -->
+  <div id="information" class="tab-content">
+    <div class="container">
+      <div class="info-block">
+        <h2>Data Sources & Methodology</h2>
+        <p>This Map Uses Data From the City of Montreal's Open Data Portal. All Datasets Selected are the Most Recent Ones Provided. https://donnees.montreal.ca/</p>
+        <ul>
+           <li><strong>Green Spaces:</strong> These areas, like parks and gardens, are crucial for biodiversity, improving air quality, and providing recreational spaces for residents. They help mitigate the urban heat island effect, absorb carbon dioxide, and support mental health and well-being.</li>
+          <p> </p>
+           <li><strong>Heat Islands:</strong> Heat maps highlight areas that experience higher temperatures, often due to dense buildings and lack of vegetation. These "heat islands" can increase energy consumption (e.g., for cooling) and worsen health conditions, especially for vulnerable populations. Understanding where these hotspots are helps in planning for better cooling strategies and climate resilience.</li>
+          <p> </p>
+           <li><strong>Flood Risk:</strong> Flood zones indicate areas that are at risk of flooding due to heavy rain, poor drainage, or proximity to water bodies. Mapping these zones is essential for disaster preparedness, urban planning, and ensuring the safety of residents. It helps prevent property damage and potential loss of life by guiding building codes and infrastructure decisions.</li>
+          <p> </p>
+           <li><strong>Greening Priority:</strong> Greening Priority refers to the areas within a city or urban environment where increasing green space is most urgent or beneficial. These priority areas are typically identified based on factors like lack of green space, high pollution levels, or areas with high heat island effects.</li>
+          <p> </p>
+           <li><strong>Air Quality:</strong> Monitoring air quality is vital for public health. High levels of pollutants can cause respiratory issues and other health problems. By mapping air quality, cities can identify pollution hotspots and take action to reduce emissions, improve urban living conditions, and protect residents' health.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB: GLOSSARY -->
+  <div id="glossary" class="tab-content">
+    <div class="container">
+      <div class="info-block">
+        <h2>Help</h2>
+        <dl>
+          <dt><strong>Tree</strong></dt>
+          <p>Click on a cluster to see which trees are in the area. Once close enough, click on the icon to observe some data about that tree.</p>
+          <p> </p>
+          <dt><strong>Green Space</strong></dt>
+          <p>Click on a green space to get Name.</dd>
+          <p> </p>
+          <dt><strong>Heat Map</strong></dt>
+          <p>Toggling heat map will demonstrate which areas of Montreal are at higher risk.</p>
+          <p> </p>
+          <dt><strong>Flood Zone</strong></dt>
+          <p>Toggling flood zone will demonstrate which areas of Montreal are at higher risk.</p>
+          <p> </p>
+          <dt><strong>Greening Priority</strong></dt>
+          <p>Toggling greening priority will demonstrate which areas of Montreal are determined by the city for urgent change.</p>
+          <p> </p>
+          <dt><strong>AQI</strong></dt>
+          <p>Toggle AQI and pick a month. Hover over the zone to observe the value.</p>
+          <p> </p>
+          <dt><strong>Search</strong></dt>
+          <p>Search for an address in this format -YourCivicNumber YourStreetName Montreal-</p>
+        </dl>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="container">
+      &copy; 2025 Montreal Eco Map Project. Data Sourced from Ville de Montréal.
+    </div>
+  </footer>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script>
+    // ----------------------------------------------------
+    // I. GLOBAL VARIABLES
+    // ----------------------------------------------------
+    let map = null;
+    let mapInstances = {}; 
+    let layers = {}; // Holds layer references
+    let currentAQIMonth = 1; // Start at January
+    let treeCluster = null; // Reference to the marker cluster group
+    let activeLayers = new Set(); // Track active layers for legend
+    let aqiInfoPanel = null; // Reference to the relocated AQI info panel
+
+    // File Paths - NOTE: Tree paths are now an array of raw borough files.
+    // Ensure these paths match the files generated by your Python processor, 
+    // especially the GeoJSON files in './processed_data/'.
+    const DATA_PATHS = {
+      // Raw file names for multiple borough CSVs (must be present in the sandbox root)
+      trees: [
+        'Villeray_SM_PE.csv',
+        'Ville_Marie.csv',
+        'Verdun.csv',
+        'Saint_Leonard.csv',
+        'Rosemont_Patrie.csv',
+        'RDP_PAT.csv',
+        'Pierrefonds_Roxboro.csv',
+        'Mercier_HM.csv',
+        'Le_Sud_Ouest.csv',
+        'Le_Plateau_MR.csv',
+        'Lachine.csv',
+        'CDN_NDG.csv',
+        'Ahuntsic_Cartierville.csv'
+      ],
+      // Other files are assumed to be in ./processed_data/ as set up by the Python script
+      green: './processed_data/Green.geojson',
+      heat:  './processed_data/Heat_HighRisk.geojson',   
+      flood: './processed_data/Flood_HighRisk.geojson', 
+      prio:  './processed_data/GreenPrio_HighPriority.geojson',
+      aqi:   './processed_data/rsqa_sectors_monthly_aqi.geojson' 
+    };
+
+    const MONTH_NAMES = [
+        "January", "February", "March", "April", "May", "June", 
+        "July", "August", "September", "October", "November", "December"
+    ];
+
+    // Define the custom style for tree markers (small green circle)
+    const treeMarkerOptions = {
+        radius: 4, 
+        fillColor: "#4e8d5a", 
+        color: "#3c6e46", // Darker green outline
+        weight: 1, 
+        opacity: 1, 
+        fillOpacity: 0.8
+    };
+
+
+    // ----------------------------------------------------
+    // II. MAP INITIALIZATION
+    // ----------------------------------------------------
+    function createMapIfNeeded(tabId) {
+      if (mapInstances[tabId] && mapInstances[tabId].map) return mapInstances[tabId].map;
+      
+      const mapEl = document.getElementById('map');
+      if (!mapEl) {
+        console.error("Map container element 'map' not found.");
+        return null;
+      }
+
+      // Init Leaflet Map
+      map = L.map('map').setView([45.55, -73.70], 11); 
+      
+      // Initialize AQI Info Panel reference
+      aqiInfoPanel = {
+          _div: document.getElementById('aqi-info-panel'),
+          update: function (props) {
+              // Only display if the AQI layer is checked
+              if (!props || !document.getElementById('chk-aqi').checked) {
+                  this._div.style.display = 'none';
+                  return;
+              }
+              
+              this._div.style.display = 'block';
+              const monthName = MONTH_NAMES[currentAQIMonth - 1];
+              const val = props['avg_aqi_m_' + currentAQIMonth];
+              let status = 'Unknown';
+              // Check the AQI value ranges for status
+              if(val !== null && val !== undefined) {
+                  if(val <= 25) status = 'Good';
+                  else if (val <= 50) status = 'Acceptable';
+                  else status = 'Poor';
+              }
+
+              this._div.innerHTML = `<h4>Air Quality (${monthName})</h4>
+                  <b>Sector:</b> ${props.nom}<br/>
+                  <b>Index:</b> ${val ? val.toFixed(2) : 'N/A'}<br/>
+                  <b>Status:</b> <span style="font-weight:bold; color:${getAQIColor(val)}">${status}</span>`;
+          }
+      };
+      window.aqiInfoPanel = aqiInfoPanel;
+
+
+      // --- Base Map Layers ---
+      const osmColor = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="http://osm.org/copyright">OpenStreetMap</a> contributors',
+          maxZoom: 19
+      });
+      
+      const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+          maxZoom: 19
+      });
+      
+      const standardLight = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+          attribution: '&copy; OpenStreetMap &copy; CARTO',
+          maxZoom: 19
+      });
+
+
+      const baseLayers = {
+          "Standard (OSM Color)": osmColor.addTo(map), // Add OSM Color by default
+          "Satellite (Imagery)": satellite,
+          "Standard (Light)": standardLight
+      };
+      
+      // Add Base Layer Control
+      L.control.layers(baseLayers, null, { collapsed: true, position: 'topright' }).addTo(map);
+
+
+      // Add Geocoder Control
+      if (L.Control.Geocoder) {
+        L.Control.geocoder({ position: 'topleft' }).addTo(map);
+      }
+
+      // Store instance
+      mapInstances[tabId] = { map: map };
+      
+      // Initial Data Load
+      initDataLayers();
+
+      return map;
+    }
+
+    // ----------------------------------------------------
+    // III. DATA LOADING
+    // ----------------------------------------------------
+    
+    // Helper function to load and parse a single CSV file
+    const loadAndParseTreeCSV = (path) => {
+        return new Promise((resolve) => {
+            Papa.parse(path, {
+                download: true,
+                header: true,
+                dynamicTyping: true,
+                complete: (results) => {
+                    console.log(`Loaded ${results.data.length} records from ${path}`);
+                    resolve(results.data);
+                },
+                error: (err) => {
+                    console.warn(`Could not load tree CSV from ${path}. Error:`, err);
+                    resolve([]); // Resolve with empty array to prevent failure
+                }
+            });
+        });
+    };
+
+    async function initDataLayers() {
+      const overlay = document.getElementById('loading-overlay');
+      overlay.style.display = 'flex'; // Ensure loading is visible
+
+      try {
+        // --- 1. Load All Trees (CSV Array) ---
+        document.querySelector('#loading-overlay span').innerText = "Loading tree data...";
+        
+        const treeLoadPromises = DATA_PATHS.trees.map(loadAndParseTreeCSV);
+        const allTreeDataArrays = await Promise.all(treeLoadPromises);
+        
+        // Flatten the array of arrays and filter out invalid coordinates
+        const allTreeData = allTreeDataArrays.flat().filter(tree => tree && tree.Latitude && tree.Longitude); 
+        
+        treeCluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 80 });
+        
+        allTreeData.forEach(tree => {
+            const marker = L.circleMarker([tree.Latitude, tree.Longitude], treeMarkerOptions);
+            
+            // --- Tree Popup Content ---
+            const treeName = tree.Essence_ang || 'Unknown Species';
+            // Prioritize ARROND_NOM, then Arrond_nom, then Borough
+            const boroughName = tree.ARROND_NOM || tree.Arrond_nom || tree.Borough || 'N/A'; 
+            
+            // Check if Date_Plantation exists and is non-null/non-empty after stripping whitespace
+            const datePlantedRaw = String(tree.Date_Plantation || '').trim();
+            let dateHtml = '';
+
+            if (datePlantedRaw) {
+                // Use substring(0, 10) for YYYY-MM-DD date format
+                const datePlanted = datePlantedRaw.substring(0, 10);
+                dateHtml = `<b>Date Planted:</b> ${datePlanted}<br>`;
+            }
+            
+            const popupText = `<b>Tree Name:</b> ${treeName}<br>
+                               <b>Borough:</b> ${boroughName}<br>
+                               ${dateHtml}`; // Insert the date line (or empty string)
+            
+            marker.bindPopup(popupText);
+            treeCluster.addLayer(marker);
+        });
+        
+        layers.trees = treeCluster; // Store reference
+        console.log(`Total tree data loaded and clustered: ${allTreeData.length} markers.`);
+        
+        // --- 2. Load GeoJSON Layers ---
+        document.querySelector('#loading-overlay span').innerText = "Loading GeoJSON layers...";
+
+        // Helper function to safely fetch GeoJSON and return JSON data
+        const fetchGeoJSON = async (path) => {
+            const res = await fetch(path);
+            if (!res.ok) {
+                throw new Error(`Failed to load ${path}: ${res.statusText}`);
+            }
+            return res.json();
+        };
+
+        // Use Promise.allSettled to handle potential individual fetch failures gracefully
+        const [greenRes, heatRes, floodRes, prioRes, aqiRes] = await Promise.allSettled([
+          fetchGeoJSON(DATA_PATHS.green),
+          fetchGeoJSON(DATA_PATHS.heat),
+          fetchGeoJSON(DATA_PATHS.flood),
+          fetchGeoJSON(DATA_PATHS.prio),
+          fetchGeoJSON(DATA_PATHS.aqi)
+        ]);
+        
+        const processGeoJSON = (res, name, styleOpts) => {
+            if (res.status === 'fulfilled') {
+                const data = res.value;
+                
+                // --- CUSTOM HANDLING FOR GREEN SPACES POPUP ---
+                if (name === 'green') {
+                    styleOpts.onEachFeature = (feature, layer) => {
+                        // Prioritize 'Nom' then fall back to 'NOM' or 'nom'
+                        const parkName = feature.properties.Nom || feature.properties.NOM || feature.properties.nom || 'Unknown Green Space';
+                        layer.bindPopup(`<b>Park Name:</b> ${parkName}`);
+                    };
+                }
+
+                layers[name] = L.geoJSON(data, styleOpts);
+                console.log(`Successfully processed layer: ${name}`);
+            } else {
+                console.warn(`Layer ${name} failed to load:`, res.reason);
+            }
+        };
+
+        // Green Spaces
+        processGeoJSON(greenRes, 'green', {
+            style: { color: '#4e8d5a', weight: 1, fillOpacity: 0.4, fillColor: '#4e8d5a' },
+            // onEachFeature is now handled inside processGeoJSON for dynamic logic
+        });
+
+        // Heat (High Risk)
+        processGeoJSON(heatRes, 'heat', {
+            style: { color: '#e53935', weight: 0, fillOpacity: 0.5, fillColor: '#e53935' }
+        });
+
+        // Flood (High Risk)
+        processGeoJSON(floodRes, 'flood', {
+            style: { color: '#1e88e5', weight: 0, fillOpacity: 0.5, fillColor: '#1e88e5' }
+        });
+
+        // Prio (High Priority)
+        processGeoJSON(prioRes, 'prio', {
+            style: { color: '#8e24aa', weight: 0, fillOpacity: 0.5, fillColor: '#8e24aa' }
+        });
+        
+        // AQI
+        if (aqiRes.status === 'fulfilled') {
+           const data = aqiRes.value;
+           layers.aqi = L.geoJSON(data, {
+             style: styleAQI,
+             onEachFeature: onEachFeatureAQI
+           });
+           console.log("Successfully processed layer: aqi");
+        }
+        
+        // Hide loading spinner after all data is initialized
+        overlay.style.display = 'none';
+
+      } catch (err) {
+        console.error("Error initializing layers:", err);
+        document.querySelector('#loading-overlay span').innerText = "Error loading data. Check console.";
+        // Keep overlay visible on error
+      }
+    }
+    
+    // ----------------------------------------------------
+    // IV. LAYER CONTROL LOGIC
+    // ----------------------------------------------------
+    
+    function toggleLayer(layerKey) {
+      if (!layers[layerKey]) {
+        console.warn(`Layer ${layerKey} is not available.`);
+        return;
+      }
+      
+      const checkbox = document.getElementById(`chk-${layerKey}`);
+      if (checkbox.checked) {
+        layers[layerKey].addTo(map);
+        activeLayers.add(layerKey);
+        
+        // Show AQI controls if enabled
+        if(layerKey === 'aqi') {
+            document.getElementById('aqi-month-control').style.display = 'block';
+            window.aqiInfoPanel._div.style.display = 'block'; // Show panel shell
+            window.aqiInfoPanel.update(null); // Clear content
+            updateAQILayer();
+        }
+      } else {
+        map.removeLayer(layers[layerKey]);
+        activeLayers.delete(layerKey);
+        
+        // Hide AQI controls and panel if disabled
+        if(layerKey === 'aqi') {
+            document.getElementById('aqi-month-control').style.display = 'none';
+            // Hide the panel when the layer is unchecked
+            if(window.aqiInfoPanel) window.aqiInfoPanel._div.style.display = 'none';
+        }
+      }
+      updateLegend();
+    }
+
+    // ----------------------------------------------------
+    // V. AQI SPECIFIC LOGIC
+    // ----------------------------------------------------
+
+    document.getElementById('aqi-month-select').addEventListener('change', (e) => {
+        currentAQIMonth = parseInt(e.target.value);
+        updateAQILayer();
+    });
+
+    function updateAQILayer() {
+        if (layers.aqi && map.hasLayer(layers.aqi)) {
+            // This forces a re-render of all features with the new style
+            layers.aqi.setStyle(styleAQI); 
+        }
+    }
+
+    function getAQIColor(d) {
+        // 1-25=good, 26-50=acceptable, 51+=poor
+        if (d === null || d === undefined || d === 0) return '#ccc'; // Grey for N/A or 0
+        if (d > 50) return '#d62728'; // Poor (Red)
+        if (d > 25) return '#ff7f0e'; // Acceptable (Orange)
+        return '#2ca02c';             // Good (Green)
+    }
+
+    function styleAQI(feature) {
+        const propName = `avg_aqi_m_${currentAQIMonth}`;
+        const val = feature.properties[propName];
+        return {
+            fillColor: getAQIColor(val),
+            weight: 2,
+            opacity: 1,
+            color: 'white',
+            dashArray: '3',
+            fillOpacity: 0.7
+        };
+    }
+
+    function onEachFeatureAQI(feature, layer) {
+        layer.on({
+            mouseover: (e) => {
+                // Use the relocated AQI info panel
+                if (window.aqiInfoPanel) window.aqiInfoPanel.update(feature.properties);
+                e.target.setStyle({ weight: 4, color: '#666', dashArray: '' });
+                e.target.bringToFront();
+            },
+            mouseout: (e) => {
+                // Hide the relocated AQI info panel
+                if (window.aqiInfoPanel) window.aqiInfoPanel.update(null); 
+                // Reset to default style using the current AQI logic
+                layers.aqi.resetStyle(e.target);
+            }
+        });
+    }
+
+    // ----------------------------------------------------
+    // VI. LEGEND LOGIC
+    // ----------------------------------------------------
+    function updateLegend() {
+        const legend = document.getElementById('map-legend');
+        let content = '';
+        
+        if (activeLayers.size === 0) {
+            legend.style.display = 'none';
+            return;
+        }
+        legend.style.display = 'block';
+
+        if (activeLayers.has('heat')) {
+            content += '<div class="legend-section"><div class="legend-title">Heat Risk</div><div class="legend-item"><i class="legend-color" style="background:#e53935"></i> High Risk (Class 4-5)</div></div>';
+        }
+        if (activeLayers.has('flood')) {
+            content += '<div class="legend-section"><div class="legend-title">Flood Risk</div><div class="legend-item"><i class="legend-color" style="background:#1e88e5"></i> High Risk (Level 3-5)</div></div>';
+        }
+        if (activeLayers.has('prio')) {
+            content += '<div class="legend-section"><div class="legend-title">Greening Priority</div><div class="legend-item"><i class="legend-color" style="background:#8e24aa"></i> High Priority (Level 1-2)</div></div>';
+        }
+        if (activeLayers.has('aqi')) {
+            content += '<div class="legend-section"><div class="legend-title">Air Quality Index</div>';
+            content += '<div class="legend-item"><i class="legend-color" style="background:#2ca02c"></i> 0-25 Good</div>';
+            content += '<div class="legend-item"><i class="legend-color" style="background:#ff7f0e"></i> 26-50 Acceptable</div>';
+            content += '<div class="legend-item"><i class="legend-color" style="background:#d62728"></i> 51+ Poor</div>';
+            content += '<div class="legend-item"><i class="legend-color" style="background:#ccc"></i> N/A or 0 (No Data)</div>';
+            content += '</div>';
+        }
+        if (activeLayers.has('green')) {
+             content += '<div class="legend-section"><div class="legend-title">Base Layers</div><div class="legend-item"><i class="legend-color" style="background:#4e8d5a"></i> Green Spaces</div></div>';
+        }
+        if (activeLayers.has('trees')) {
+             // Updated legend item to reflect the new marker style
+             content += '<div class="legend-section"><div class="legend-title">Trees</div><div class="legend-item"><i class="legend-color tree-marker"></i> Public Trees</div></div>';
+        }
+
+        legend.innerHTML = content;
+    }
+
+    // ----------------------------------------------------
+    // VII. VIEW SWITCHING
+    // ----------------------------------------------------
+    function switchView(tabId) {
+        // Update Nav
+        document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+        const navEl = document.getElementById(`nav-${tabId}`);
+        if (navEl) navEl.classList.add('active');
+        
+        // Update Tabs
+        document.querySelectorAll('.tab-content').forEach(div => div.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        
+        // Special handling for map tab
+        if (tabId === 'greenspace') {
+             const map = createMapIfNeeded('greenspace');
+             // Invalidate size ensures the map renders correctly if the div size changed
+             setTimeout(() => {
+                 if (map) map.invalidateSize();
+             }, 100);
+        }
+    }
+    
+    // Initial load on page start
+    document.addEventListener('DOMContentLoaded', () => {
+        // Automatically switch to 'home' view
+        switchView('home'); 
+    });
+  </script>
+</body>
+</html>
